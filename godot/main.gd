@@ -28,12 +28,16 @@ var MOVES := {
 	"bolt": [11.0, 5.5, 0.095],
 }
 
+# Each legend: cape, accent trim, armor, helm, skin, blade colors, horn shape and weapon
 var CHARS: Array = [
-	{"name": "Pale Wisp", "cloak": Color("1d2633"), "trim": Color("9fdcf5"), "horn": "straight"},
-	{"name": "Ember Husk", "cloak": Color("2e1c18"), "trim": Color("f29a52"), "horn": "hooked"},
+	{"name": "Pale Wisp", "cloak": Color("2f5677"), "trim": Color("9fdcf5"), "armor": Color("6a7d8f"), "helm": Color("eef2f4"),
+		"skin": Color("f1d6bf"), "blade": Color("e3edf2"), "horn": "straight", "weapon": "nail"},
+	{"name": "Ember Husk", "cloak": Color("9a3d1e"), "trim": Color("f29a52"), "armor": Color("4d3d36"), "helm": Color("d08f4c"),
+		"skin": Color("b97c56"), "blade": Color("ffe1c2"), "horn": "hooked", "weapon": "great"},
 ]
 
 const PALE := Color("eef2f4")
+const OUTLINE := Color("0a0d12")
 const INK := Color("05070a")
 const DIM := Color("8794a0")
 const SOUL := Color("9fdcf5")
@@ -52,12 +56,17 @@ class Fighter:
 	var cloak := Color.BLACK
 	var trim := Color.WHITE
 	var horn := ""
+	var armor := Color.GRAY
+	var helm := Color.WHITE
+	var skin := Color.WHITE
+	var blade := Color.WHITE
+	var weapon := "nail"
 	var x := 0.0
 	var y := 0.0
 	var vx := 0.0
 	var vy := 0.0
 	var hw := 16.0
-	var h := 58.0
+	var h := 68.0
 	var facing := 1
 	var on_ground := false
 	var on_soft := false
@@ -137,8 +146,9 @@ var pressed := {}
 var pad_prev: Array = [{}, {}]
 var font: Font
 var body_font: Font
-var spires: Array = []
-var stalactites: Array = []
+var far_towers: Array = []
+var mid_cols: Array = []
+var near_rocks: Array = []
 var motes: Array = []
 var buttons: Array = []   # [Rect2, action] for mouse clicks on menus
 var sfx := {}
@@ -152,13 +162,16 @@ func _ready() -> void:
 	body_font = ThemeDB.fallback_font
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
-	for layer in 2:
-		for i in 14:
-			spires.append([layer, rng.randf() * 1500.0, 30.0 + rng.randf() * 70.0, 220.0 + rng.randf() * 380.0 + layer * 80.0])
-	var sx := 0.0
-	while sx < 1500.0:
-		stalactites.append([sx, 30.0 + rng.randf() * 120.0])
-		sx += 26.0 + rng.randf() * 40.0
+	for i in 24:
+		far_towers.append([i * 72.0 + rng.randf() * 40.0, 18.0 + rng.randf() * 26.0, 160.0 + rng.randf() * 300.0, 10.0 + rng.randf() * 30.0])
+	var cx := 0.0
+	while cx < 1900.0:
+		mid_cols.append([cx, 230.0 + rng.randf() * 60.0])
+		cx += 196.0
+	var rx := 0.0
+	while rx < 1900.0:
+		near_rocks.append([rx, 60.0 + rng.randf() * 170.0, 34.0 + rng.randf() * 50.0])
+		rx += 70.0 + rng.randf() * 110.0
 	for i in 50:
 		motes.append([randf() * W, randf() * H, 0.2 + randf() * 0.6, 1.0 + randf() * 2.0])
 	_build_sounds()
@@ -175,6 +188,11 @@ func make_fighter(i: int) -> Fighter:
 	f.cloak = c["cloak"]
 	f.trim = c["trim"]
 	f.horn = c["horn"]
+	f.armor = c["armor"]
+	f.helm = c["helm"]
+	f.skin = c["skin"]
+	f.blade = c["blade"]
+	f.weapon = c["weapon"]
 	f.facing = -1 if i == 1 else 1
 	return f
 
@@ -720,7 +738,8 @@ func hit(a: Fighter, b: Fighter, kind: String, dir_x: float) -> void:
 		b.y -= 2.0
 	freeze = mini(14, 4 + int(kb * 0.5))
 	shake = maxf(shake, minf(18.0, kb))
-	sparks(b.x, b.y - 30.0, dir_x, 10 + int(kb))
+	sparks(b.x, b.y - 34.0, dir_x, 10 + int(kb))
+	add_part(b.x, b.y - 34.0, 0, 0, 9, Color.WHITE, 18.0 + kb, "star", 0)
 	burst(b.x, b.y - 30.0, b.trim, 8, 3.0)
 	play_sfx("hit_big" if kb > 14.0 else "hit")
 	if a != null:
@@ -945,6 +964,7 @@ func _draw() -> void:
 	draw_set_transform_matrix(world)
 	draw_particles()
 	draw_set_transform_matrix(Transform2D())
+	draw_fog_and_foreground()
 	draw_vignette()
 	if state != "demo":
 		draw_hud()
@@ -963,93 +983,157 @@ func _draw() -> void:
 
 
 func draw_background() -> void:
-	var ox := -110.0 - (cam_x - 640.0) * 0.12
-	var oy := -70.0 - (cam_y - 400.0) * 0.08
-	var top := Color("0c161c")
-	var mid := Color("081015")
-	var bot := Color("040608")
-	var bands := 24
+	var px := cam_x - 640.0
+	var py := cam_y - 400.0
+	# misty sky: pale and blue up high, near black at the floor of the cavern
+	var top := Color("2a4256")
+	var mid := Color("162634")
+	var bot := Color("091017")
+	var bands := 30
 	for i in bands:
 		var t := float(i) / bands
 		var c := top.lerp(mid, t / 0.55) if t < 0.55 else mid.lerp(bot, (t - 0.55) / 0.45)
 		draw_rect(Rect2(0, i * H / bands, W, H / bands + 1.0), c)
-	for r in range(12, 0, -1):
-		draw_circle(Vector2(ox + 750.0, oy + 330.0), r * 35.0, Color(0.62, 0.86, 0.96, 0.009))
-	for s in spires:
-		var x: float = ox + s[1]
-		var w: float = s[2]
-		var hh: float = s[3]
-		var ground := oy + 860.0
-		var tp := ground - hh
-		var pts := PackedVector2Array([Vector2(x, ground), Vector2(x, tp + 40.0)])
-		quad_to(pts, Vector2(x + w / 2.0, tp - 30.0), Vector2(x + w, tp + 40.0))
-		pts.append(Vector2(x + w, ground))
-		fill(pts, Color("0d171e") if s[0] == 1 else Color("0a1218"))
-		for k in 3:
-			draw_circle(Vector2(x + w / 2.0, tp + 70.0 + k * 60.0), 4.0, Color(0.62, 0.86, 0.96, 0.08))
-	for st in stalactites:
-		var x: float = ox + st[0]
-		fill(PackedVector2Array([Vector2(x - 14.0, 0), Vector2(x, st[1] + oy + 70.0), Vector2(x + 14.0, 0)]), Color("05080b"))
+	# far city of towers, barely there through the fog
+	var ox := -160.0 - px * 0.05
+	var oy := -py * 0.03
+	for t in far_towers:
+		var x: float = ox + t[0]
+		var w: float = t[1]
+		var base := oy + 640.0
+		var tp: float = base - t[2]
+		var pts := PackedVector2Array([Vector2(x, base), Vector2(x, tp + w * 0.5)])
+		for i in range(1, 12):
+			var a := PI + PI * i / 12.0
+			pts.append(Vector2(x + w / 2.0 + cos(a) * w / 2.0, tp + w * 0.5 + sin(a) * w * 0.7))
+		pts.append(Vector2(x + w, tp + w * 0.5))
+		pts.append(Vector2(x + w, base))
+		fill(pts, Color("2c4559"))
+		draw_line(Vector2(x + w / 2.0, tp - w * 0.2), Vector2(x + w / 2.0, tp - w * 0.2 - t[3]), Color("2c4559"), 3.0)
+		for k in int(t[2] / 70.0):
+			draw_rect(Rect2(x + w / 2.0 - 2.0, tp + w + k * 60.0, 4, 9), Color(0.78, 0.92, 1.0, 0.16))
+	# fog over the far city
+	for i in 6:
+		draw_rect(Rect2(0, oy + 380.0 + i * 40.0, W, 400), Color(0.6, 0.76, 0.88, 0.022))
+	# light shafts falling from cracks in the ceiling
+	for i in 4:
+		var x0: float = 160.0 + i * 310.0 - px * 0.1
+		var a := 0.03 + 0.012 * sin(frame * 0.012 + i * 1.7)
+		fill(PackedVector2Array([Vector2(x0, -10), Vector2(x0 + 60.0, -10), Vector2(x0 + 250.0, H), Vector2(x0 + 120.0, H)]), Color(0.82, 0.93, 1.0, a))
+	# middle colonnade
+	var ox2 := -120.0 - px * 0.15
+	var oy2 := -py * 0.08
+	var colc := Color("1a2a37")
+	for c in mid_cols:
+		var x: float = ox2 + c[0]
+		var ctop: float = oy2 + c[1]
+		draw_rect(Rect2(x, ctop, 26, H - ctop + 80.0), colc)
+		draw_rect(Rect2(x - 8.0, ctop - 10.0, 42, 12), colc)
+		draw_arc(Vector2(x + 13.0 + 85.0, ctop + 4.0), 85.0, PI, TAU, 24, colc, 14.0)
+	# near rock teeth hanging from the ceiling
+	var ox3 := -140.0 - px * 0.3
+	var oy3 := -py * 0.2 - 20.0
+	for r in near_rocks:
+		var x: float = ox3 + r[0]
+		var ln: float = r[1]
+		var w: float = r[2]
+		fill(PackedVector2Array([Vector2(x - w / 2.0, oy3 - 40.0), Vector2(x + w / 2.0, oy3 - 40.0), Vector2(x + w * 0.25, oy3 + ln * 0.55),
+			Vector2(x + w * 0.05, oy3 + ln), Vector2(x - w * 0.2, oy3 + ln * 0.6)]), Color("0d1820"))
 	for m in motes:
 		m[1] -= m[2]
 		m[0] += sin((frame + m[1]) * 0.01) * 0.2
 		if m[1] < -5.0:
 			m[1] = H + 5.0
 			m[0] = randf() * W
-		draw_circle(Vector2(m[0], m[1]), m[3], Color(0.62, 0.86, 0.96, 0.35))
+		draw_circle(Vector2(m[0], m[1]), m[3], Color(0.75, 0.9, 1.0, 0.4))
 
 
 func draw_stage() -> void:
-	var line := Color("2b3743")
+	var chain := Color("1e2b36")
 	for p in SOFT:
 		var r: Rect2 = p
 		for cx in [r.position.x + 18.0, r.end.x - 18.0]:
-			draw_line(Vector2(cx, -400), Vector2(cx, r.position.y), line, 3.0)
+			draw_line(Vector2(cx, -400), Vector2(cx, r.position.y), chain, 3.0)
+		# lumafly lantern
 		var lx := r.position.x + r.size.x / 2.0
-		var ly := r.position.y + 46.0
-		draw_line(Vector2(lx, r.position.y + 12.0), Vector2(lx, ly - 10.0), line, 2.0)
-		var flick := 0.22 + sin(frame * 0.07 + r.position.x) * 0.03
-		for k in range(7, 0, -1):
-			draw_circle(Vector2(lx, ly), k * 10.0, Color(0.62, 0.86, 0.96, flick / 7.0))
-		fill(ellipse(lx, ly, 6, 9), Color("cfeefa"))
-		draw_rect(Rect2(lx - 8.0, ly - 11.0, 16, 22), Color("3b4a58"), false, 2.0)
-		draw_rect(Rect2(r.position.x, r.position.y, r.size.x, 14), Color("1b232c"))
-		draw_rect(Rect2(r.position.x, r.position.y, r.size.x, 3), Color("3a4856"))
-		var x := r.position.x + 8.0
-		while x < r.end.x - 8.0:
-			fill(PackedVector2Array([Vector2(x, r.position.y + 14.0), Vector2(x + 6.0, r.position.y + 24.0), Vector2(x + 12.0, r.position.y + 14.0)]), Color("10161c"))
-			x += 22.0
-	# main ruin
-	var bands := 16
-	for i in bands:
-		var t := float(i) / bands
-		var c := Color("1c252e").lerp(Color("10161c"), t / 0.4) if t < 0.4 else Color("10161c").lerp(Color("06090c"), (t - 0.4) / 0.6)
-		draw_rect(Rect2(MX, MY + i * MH / bands, MW, MH / bands + 1.0), c)
-	draw_rect(Rect2(MX - 6.0, MY, MW + 12.0, 5), Color("3a4856"))
-	draw_rect(Rect2(MX - 6.0, MY + 5.0, MW + 12.0, 8), Color("26313c"))
-	var arch := Color(0.62, 0.86, 0.96, 0.10)
-	var ax := MX + 40.0
-	while ax < MX + MW - 40.0:
-		draw_line(Vector2(ax, MY + 140.0), Vector2(ax, MY + 70.0), arch, 2.0)
+		var ly := r.position.y + 50.0
+		draw_line(Vector2(lx, r.position.y + 14.0), Vector2(lx, ly - 12.0), chain, 2.0)
+		var flick := 0.26 + sin(frame * 0.07 + r.position.x) * 0.04
+		for k in range(8, 0, -1):
+			draw_circle(Vector2(lx, ly), k * 11.0, Color(0.7, 0.9, 1.0, flick / 8.0))
+		outlined(ellipse(lx, ly, 8, 11, 16), Color("d9f2ff"), 1.0, 2.0)
+		draw_line(Vector2(lx - 9.0, ly - 12.0), Vector2(lx + 9.0, ly - 12.0), OUTLINE, 3.0)
+		# stone shelf
+		var x0 := r.position.x
+		var x1 := r.end.x
+		var y0 := r.position.y
+		outlined(PackedVector2Array([Vector2(x0 - 6, y0), Vector2(x1 + 6, y0), Vector2(x1 + 2, y0 + 10), Vector2(x1 - 14, y0 + 18),
+			Vector2(lx + 30.0, y0 + 22.0), Vector2(x0 + 14, y0 + 18), Vector2(x0 - 2, y0 + 10)]), Color("1a2631"), 1.0, 3.0)
+		draw_line(Vector2(x0 - 4, y0 + 1.5), Vector2(x1 + 4, y0 + 1.5), Color("a8c6d6"), 2.0)
+		var mx := x0 + 10.0
+		while mx < x1 - 6.0:
+			var ln := 8.0 + float(int(mx * 7.0) % 13)
+			draw_line(Vector2(mx, y0 + 16.0), Vector2(mx + 1.0, y0 + 16.0 + ln), Color("2c4a4a"), 2.0)
+			mx += 17.0
+	# main ruin: a chunky slab of carved rock
+	var pts := PackedVector2Array([Vector2(MX - 10, MY), Vector2(MX + MW + 10, MY), Vector2(MX + MW + 4, MY + 36), Vector2(MX + MW - 14, MY + 120),
+		Vector2(MX + MW - 34, MY + 250), Vector2(MX + MW - 70, MY + 420), Vector2(MX + 70, MY + 420), Vector2(MX + 34, MY + 250),
+		Vector2(MX + 14, MY + 120), Vector2(MX - 4, MY + 36)])
+	outlined(pts, Color("121d26"), 1.0, 3.0)
+	fill(PackedVector2Array([Vector2(MX + 20, MY + 150), Vector2(MX + MW - 20, MY + 150), Vector2(MX + MW - 66, MY + 418), Vector2(MX + 66, MY + 418)]), Color("0b131a"))
+	draw_rect(Rect2(MX - 6, MY + 4, MW + 12, 12), Color("1c2a36"))
+	draw_line(Vector2(MX - 8, MY + 1.5), Vector2(MX + MW + 8, MY + 1.5), Color("b4d0de"), 2.5)
+	draw_line(Vector2(MX - 6, MY + 16), Vector2(MX + MW + 6, MY + 16), OUTLINE, 2.0)
+	var arch := Color(0.65, 0.85, 0.95, 0.09)
+	var ax := MX + 50.0
+	while ax < MX + MW - 60.0:
+		draw_line(Vector2(ax, MY + 130.0), Vector2(ax, MY + 70.0), arch, 2.0)
 		draw_arc(Vector2(ax + 30.0, MY + 70.0), 30.0, PI, TAU, 16, arch, 2.0)
-		draw_line(Vector2(ax + 60.0, MY + 70.0), Vector2(ax + 60.0, MY + 140.0), arch, 2.0)
+		draw_line(Vector2(ax + 60.0, MY + 70.0), Vector2(ax + 60.0, MY + 130.0), arch, 2.0)
+		draw_circle(Vector2(ax + 30.0, MY + 52.0), 4.0, arch)
 		ax += 100.0
-	var fx := MX + 10.0
+	# pale fungus and grass along the lip
+	var fx := MX + 6.0
 	while fx < MX + MW:
-		var hh := 4.0 + float(int(fx * 13.0) % 7)
-		var pts := PackedVector2Array()
-		for i in 9:
-			var a := PI + PI * i / 8.0
-			pts.append(Vector2(fx + cos(a) * 3.0, MY - 1.0 + sin(a) * hh / 2.0))
-		fill(pts, Color(0.7, 0.9, 0.86, 0.55))
-		fx += 37.0
+		var hh := 5.0 + float(int(fx * 13.0) % 9)
+		fill(PackedVector2Array([Vector2(fx - 3, MY + 1), Vector2(fx + 1, MY - hh), Vector2(fx + 3, MY + 1)]), Color("6f9a92"))
+		if int(fx) % 3 == 0:
+			outlined(ellipse(fx + 8.0, MY - 4.0, 4, 3, 10), Color("cfe9e4"), 1.0, 1.5)
+		fx += 23.0
 	for side in [[MX, -1.0], [MX + MW, 1.0]]:
 		var ex: float = side[0]
 		var d: float = side[1]
 		for i in 4:
-			var pts := PackedVector2Array([Vector2(ex, MY + 14.0 + i * 10.0)])
-			quad_to(pts, Vector2(ex + d * 18.0, MY + 60.0 + i * 20.0), Vector2(ex + d * 6.0, MY + 110.0 + i * 26.0))
-			draw_polyline(pts, Color("0c1115"), 3.0)
+			var root := PackedVector2Array([Vector2(ex, MY + 14.0 + i * 10.0)])
+			quad_to(root, Vector2(ex + d * 18.0, MY + 60.0 + i * 20.0), Vector2(ex + d * 4.0, MY + 110.0 + i * 26.0))
+			draw_polyline(root, OUTLINE, 3.0)
+
+
+func draw_fog_and_foreground() -> void:
+	# low mist hanging over the cavern floor
+	for i in 8:
+		draw_rect(Rect2(0, H - 150.0 + i * 20.0, W, 160), Color(0.62, 0.78, 0.9, 0.012))
+	var fxo := -(cam_x - 640.0) * 0.4
+	var fyo := -(cam_y - 400.0) * 0.3
+	var dark := Color("020406")
+	# thorn vine curling up from the bottom left
+	var vine := PackedVector2Array([Vector2(-60 + fxo, H + 40 + fyo)])
+	quad_to(vine, Vector2(150 + fxo, H - 60 + fyo), Vector2(90 + fxo, H - 250 + fyo), 14)
+	draw_polyline(vine, dark, 20.0)
+	for i in range(2, vine.size(), 2):
+		var p := vine[i]
+		var d := (vine[i] - vine[i - 1]).normalized()
+		var n := Vector2(-d.y, d.x) * (1.0 if i % 4 == 0 else -1.0)
+		fill(PackedVector2Array([p + n * 8.0 - d * 6.0, p + n * 28.0 + d * 6.0, p + n * 8.0 + d * 6.0]), dark)
+	# broken pillar on the right
+	fill(PackedVector2Array([Vector2(W - 34 + fxo, H + 40 + fyo), Vector2(W - 34 + fxo, H - 260 + fyo), Vector2(W - 20 + fxo, H - 290 + fyo),
+		Vector2(W - 4 + fxo, H - 270 + fyo), Vector2(W + 10 + fxo, H - 340 + fyo), Vector2(W + 60 + fxo, H - 320 + fyo), Vector2(W + 60 + fxo, H + 40 + fyo)]), dark)
+	# grass along the bottom edge
+	var gx := -40.0
+	while gx < W + 40.0:
+		var gh := 12.0 + float(int(gx * 3.7) % 17)
+		fill(PackedVector2Array([Vector2(gx + fxo * 1.2, H + 10 + fyo), Vector2(gx + 6 + fxo * 1.2, H - gh + fyo), Vector2(gx + 12 + fxo * 1.2, H + 10 + fyo)]), dark)
+		gx += 11.0
 
 
 func draw_mask(x: float, y: float, s: float, c: Color) -> void:
@@ -1060,66 +1144,141 @@ func draw_mask(x: float, y: float, s: float, c: Color) -> void:
 	fill(ellipse(x + 2.6 * s, y, 1.8 * s, 3.0 * s, 12), INK)
 
 
+func outlined(pts: PackedVector2Array, c: Color, a: float, w: float = 2.5) -> void:
+	if pts.size() < 3:
+		return
+	draw_colored_polygon(pts, fade(c, a))
+	var cl := pts.duplicate()
+	cl.append(pts[0])
+	draw_polyline(cl, fade(OUTLINE, a), w, true)
+
+
+func capsule(p: Vector2, q: Vector2, r: float) -> PackedVector2Array:
+	var ang := (q - p).angle()
+	var pts := PackedVector2Array()
+	for i in 9:
+		var t := ang + PI / 2.0 + PI * i / 8.0
+		pts.append(p + Vector2(cos(t), sin(t)) * r)
+	for i in 9:
+		var t := ang - PI / 2.0 + PI * i / 8.0
+		pts.append(q + Vector2(cos(t), sin(t)) * r)
+	return pts
+
+
+func dirv(a: float) -> Vector2:
+	return Vector2(cos(a), sin(a))
+
+
+# A legend's pose: front arm angle, blade angle, back arm angle, leg swing and body lean.
+func legend_pose(f: Fighter) -> Array:
+	var run := f.on_ground and absf(f.vx) > 1.0 and f.hitstun == 0 and f.dash == 0
+	var swing := sin(frame * 0.35) * 0.75 if run else 0.0
+	var arm := 1.15
+	var blade := 0.3
+	var back := 1.5
+	var lean := 0.0
+	if f.hitstun > 0:
+		arm = -2.3; blade = -2.7; back = -2.0; lean = -4.0
+	elif f.dash > 0:
+		arm = 2.3; blade = 2.9; back = 2.4; lean = 7.0
+	elif f.atk > 0:
+		var fr := ATK_LEN - f.atk
+		var p := clampf(float(fr - 1) / float(ACT_END - 1), 0.0, 1.0)
+		p = 1.0 - pow(1.0 - p, 2.0)
+		back = 2.0
+		match f.atk_type:
+			"side":
+				arm = lerpf(-2.0, 0.7, p); blade = lerpf(-2.4, 1.0, p); lean = lerpf(-2.0, 5.0, p)
+			"up":
+				arm = lerpf(0.9, -2.2, p); blade = lerpf(0.6, -2.7, p)
+			_:
+				arm = lerpf(-1.3, 1.5, p); blade = lerpf(-1.6, 1.57, p)
+	elif f.focus > 0:
+		arm = -1.2; blade = 2.6; back = -1.6
+	elif f.spell_cd > 20:
+		arm = 0.0; blade = 2.6; back = 2.2; lean = -3.0
+	elif not f.on_ground:
+		arm = -0.4; blade = -1.1; back = -0.8
+	elif run:
+		arm = 1.3 + swing * 0.4; blade = 2.6; back = 1.4 - swing * 0.6; lean = 4.0
+	return [arm, blade, back, swing, lean, run]
+
+
 func draw_fighter(world: Transform2D, f: Fighter) -> void:
 	if f.dead:
 		return
 	var a := 0.4 if (f.invuln > 0 and (frame >> 2) % 2 == 1) else 1.0
-	draw_set_transform_matrix(world * Transform2D(0.0, Vector2(f.facing, 1), 0.0, Vector2(f.x, f.y)))
-	var running := f.on_ground and absf(f.vx) > 1.0 and f.hitstun == 0
-	var stp := sin(frame * 0.45) if running else 0.0
-	var lean := clampf(-absf(f.vx) * 0.6, -8.0, 0.0)
-	# legs
-	draw_line(Vector2(-5, -12), Vector2(-5 + stp * 5.0, -1), fade(INK, a), 5.0)
-	draw_line(Vector2(5, -12), Vector2(5 - stp * 5.0, -1), fade(INK, a), 5.0)
-	# cloak
-	var sway := clampf(absf(f.vx) * 0.9 + (3.0 if f.vy < 0.0 else 0.0), 0.0, 10.0)
-	var cloak := Color.WHITE if f.flash > 0 else f.cloak
-	var pts := PackedVector2Array([Vector2(-12, -40)])
-	quad_to(pts, Vector2(-20 - sway * 0.4, -20), Vector2(-18 - sway, -9))
-	pts.append_array(PackedVector2Array([Vector2(-10 - sway * 0.6, -13), Vector2(-3, -8), Vector2(4, -12), Vector2(13, -8)]))
-	quad_to(pts, Vector2(17, -24), Vector2(12, -40))
-	fill(pts, fade(cloak, a))
-	# collar
-	var collar := PackedVector2Array([Vector2(-12, -40)])
-	quad_to(collar, Vector2(0, -33), Vector2(12, -40), 6)
-	collar.append(Vector2(10, -36))
-	quad_to(collar, Vector2(0, -30), Vector2(-10, -36), 6)
-	fill(collar, fade(Color.WHITE if f.flash > 0 else f.trim, a))
-	# nail at rest
-	if f.atk == 0 and f.focus == 0:
-		draw_line(Vector2(6, -24), Vector2(24 + lean, -6), fade(Color("c9d2d8"), a), 3.0)
-		draw_line(Vector2(3, -27), Vector2(9, -21), fade(Color("3b4a58"), a), 3.0)
-	# mask and horns
-	var hx := lean * 0.2
-	var mask := fade(PALE, a)
-	if f.horn == "straight":
-		var h1 := PackedVector2Array([Vector2(hx - 7, -60)])
-		quad_to(h1, Vector2(hx - 13, -72), Vector2(hx - 9, -84))
-		quad_to(h1, Vector2(hx - 5, -72), Vector2(hx - 1, -62))
-		fill(h1, mask)
-		var h2 := PackedVector2Array([Vector2(hx + 9, -60)])
-		quad_to(h2, Vector2(hx + 15, -72), Vector2(hx + 12, -84))
-		quad_to(h2, Vector2(hx + 8, -72), Vector2(hx + 4, -62))
-		fill(h2, mask)
-	else:
-		var h1 := PackedVector2Array([Vector2(hx - 6, -61)])
-		quad_to(h1, Vector2(hx - 22, -66), Vector2(hx - 22, -80))
-		quad_to(h1, Vector2(hx - 14, -70), Vector2(hx - 1, -64))
-		fill(h1, mask)
-		var h2 := PackedVector2Array([Vector2(hx + 8, -61)])
-		quad_to(h2, Vector2(hx + 24, -66), Vector2(hx + 24, -80))
-		quad_to(h2, Vector2(hx + 16, -70), Vector2(hx + 3, -64))
-		fill(h2, mask)
-	fill(ellipse(hx + 1, -50, 14, 14, 24), mask)
-	var blink := 0.25 if (frame + f.id * 97) % 200 < 6 else 1.0
-	fill(ellipse(hx - 3, -49, 3.6, 5.6 * blink, 12), fade(INK, a))
-	fill(ellipse(hx + 8, -49, 3.6, 5.6 * blink, 12), fade(INK, a))
+	var white := f.flash > 0
+	var tilt := 0.0
+	if f.hitstun > 0:
+		tilt = -0.22
+	elif f.dash > 0:
+		tilt = 0.12
+	draw_set_transform_matrix(world * Transform2D(0.0, Vector2(f.facing, 1), 0.0, Vector2(f.x, f.y)) * Transform2D(tilt, Vector2(1.12, 1.12), 0.0, Vector2.ZERO))
+	var pose := legend_pose(f)
+	var arm: float = pose[0]
+	var blade_a: float = pose[1]
+	var back_a: float = pose[2]
+	var swing: float = pose[3]
+	var lean: float = pose[4]
+	var running: bool = pose[5]
+	var bob := 0.0
+	if running:
+		bob = -absf(sin(frame * 0.35)) * 2.5
+	elif f.on_ground:
+		bob = sin(frame * 0.08 + f.id) * 1.2
+	var armor := Color.WHITE if white else f.armor
+	var armor_dk := Color.WHITE if white else f.armor.darkened(0.3)
+	var cape := Color.WHITE if white else f.cloak
+	var trim := Color.WHITE if white else f.trim
+	var skin := Color.WHITE if white else f.skin
+	var helm := Color.WHITE if white else f.helm
+	var boot := Color.WHITE if white else Color("2a2f36")
+	var hip := Vector2(0, -26 + bob)
+	var sh := Vector2(3 + lean, -50 + bob)
+	var head := Vector2(4 + lean * 1.2, -67 + bob)
+	# cape
+	var sway := clampf(absf(f.vx) * 1.2 + (4.0 if f.vy < 0.0 else 0.0) + (10.0 if f.dash > 0 else 0.0), 0.0, 16.0)
+	var flutter := sin(frame * 0.2 + f.id) * 2.0
+	outlined(PackedVector2Array([sh + Vector2(-10, -2), sh + Vector2(2, -3), Vector2(-5 + lean * 0.3, -16 + bob),
+		Vector2(-13 - sway, -8 + flutter), Vector2(-20 - sway * 1.3, -22 + flutter * 0.5)]), cape, a)
+	# back arm and leg
+	var bs := sh + Vector2(-8, 2)
+	outlined(capsule(bs, bs + dirv(back_a) * 15.0, 4.5), armor_dk, a)
+	var leg_back := PI / 2.0 - swing
+	var leg_front := PI / 2.0 + swing
+	var leg_len := 21.0
+	if not f.on_ground:
+		leg_back = PI / 2.0 + 0.5
+		leg_front = PI / 2.0 - 0.6
+		leg_len = 18.0
+	var bhip := hip + Vector2(-4, 0)
+	var bfoot := bhip + dirv(leg_back) * leg_len
+	outlined(capsule(bhip, bfoot, 5.0), armor_dk, a)
+	outlined(capsule(bfoot + Vector2(-1, 0), bfoot + Vector2(6, 0), 4.5), boot, a)
+	var fhip := hip + Vector2(4, 0)
+	var ffoot := fhip + dirv(leg_front) * leg_len
+	outlined(capsule(fhip, ffoot, 5.5), armor, a)
+	outlined(capsule(ffoot + Vector2(-1, 0), ffoot + Vector2(7, 0), 5.0), boot, a)
+	# torso, tabard and belt
+	outlined(PackedVector2Array([sh + Vector2(-12, -2), sh + Vector2(13, -2), hip + Vector2(10, 2), hip + Vector2(-9, 2)]), armor, a)
+	outlined(PackedVector2Array([sh + Vector2(-3, 4), sh + Vector2(7, 4), hip + Vector2(6, 11), hip + Vector2(1, 15), hip + Vector2(-4, 11)]), cape, a, 2.0)
+	draw_line(hip + Vector2(-9, 0), hip + Vector2(10, 0), fade(OUTLINE, a), 3.5)
+	outlined(PackedVector2Array([hip + Vector2(-1, -3), hip + Vector2(5, -3), hip + Vector2(5, 3), hip + Vector2(-1, 3)]), trim, a, 1.5)
+	outlined(ellipse(sh.x - 6.0, sh.y + 1.0, 9, 6, 14), Color.WHITE if white else f.armor.lightened(0.18), a)
+	# head under a horned helm
+	draw_head(f, head, a, white)
+	# blade, then the arm gripping it
+	var hand := sh + Vector2(4, 2) + dirv(arm) * 15.0
+	draw_blade(f, hand, blade_a, a, white)
+	outlined(capsule(sh + Vector2(4, 2), hand, 5.0), Color.WHITE if white else f.armor.lightened(0.08), a)
+	outlined(ellipse(hand.x, hand.y, 5, 5, 12), boot, a, 2.0)
 	# focus glow
 	draw_set_transform_matrix(world)
 	if f.focus > 0:
 		for k in range(6, 0, -1):
-			draw_circle(Vector2(f.x, f.y - 30.0), k * 10.0, Color(1, 1, 1, 0.06))
-	# slash
+			draw_circle(Vector2(f.x, f.y - 34.0), k * 11.0, Color(1, 1, 1, 0.06))
+	# slash arc
 	var fr := ATK_LEN - f.atk
 	if f.atk > 0 and fr >= ACT_START - 1 and fr <= ACT_END + 2:
 		var p := float(fr - ACT_START + 1) / float(ACT_END - ACT_START + 3)
@@ -1133,9 +1292,64 @@ func draw_fighter(world: Transform2D, f: Fighter) -> void:
 		var off := 22.0 if f.atk_type == "side" else 30.0
 		draw_set_transform_matrix(world * Transform2D(ang, Vector2(f.x, f.y - f.h / 2.0)))
 		var alpha := clampf(1.0 - p * 0.8, 0.15, 1.0)
-		fill(crescent(off, 54.0, 1.15, off - 16.0, 46.0, 1.0), Color(1, 1, 1, alpha))
-		fill(crescent(off + 4.0, 60.0, 1.05, off - 4.0, 54.0, 1.0), fade(f.trim, alpha * 0.35))
+		fill(crescent(off, 56.0, 1.15, off - 16.0, 47.0, 1.0), Color(1, 1, 1, alpha))
+		fill(crescent(off + 4.0, 62.0, 1.05, off - 4.0, 56.0, 1.0), fade(f.trim, alpha * 0.4))
 		draw_set_transform_matrix(world)
+
+
+func draw_head(f: Fighter, c: Vector2, a: float, white: bool) -> void:
+	var skin := Color.WHITE if white else f.skin
+	var helm := Color.WHITE if white else f.helm
+	# horns first so the helm overlaps their roots
+	if f.horn == "straight":
+		for hx in [-5.0, 7.0]:
+			var s := -1.0 if hx < 0.0 else 1.0
+			var h := PackedVector2Array([c + Vector2(hx - 4.0, -9)])
+			quad_to(h, c + Vector2(hx + s * 2.0 - 3.0, -22), c + Vector2(hx + s * 3.0, -33), 6)
+			quad_to(h, c + Vector2(hx + s * 4.0 + 2.0, -20), c + Vector2(hx + 4.0, -10), 6)
+			outlined(h, helm, a)
+	else:
+		for s in [-1.0, 1.0]:
+			var bx: float = 1.0 + s * 6.0
+			var h := PackedVector2Array([c + Vector2(bx + s * 3.0, -10)])
+			quad_to(h, c + Vector2(bx + s * 16.0, -16), c + Vector2(bx + s * 18.0, -31), 6)
+			quad_to(h, c + Vector2(bx + s * 8.0, -20), c + Vector2(bx - s * 3.0, -12), 6)
+			outlined(h, helm, a)
+	outlined(ellipse(c.x, c.y, 14, 14, 24), skin, a)
+	var hp := PackedVector2Array()
+	for i in 17:
+		var ang := deg_to_rad(125.0 + 220.0 * i / 16.0)
+		hp.append(c + Vector2(cos(ang), sin(ang)) * 15.5)
+	hp.append(c + Vector2(7, -2))
+	hp.append(c + Vector2(-1, 5))
+	outlined(hp, helm, a)
+	draw_line(c + Vector2(-9, -9), c + Vector2(2, -13), fade(Color.WHITE, 0.35 * a), 2.0)
+	var ink := fade(OUTLINE, a)
+	fill(ellipse(c.x + 7.0, c.y + 2.0, 2.3, 3.2, 10), ink)
+	fill(ellipse(c.x + 12.5, c.y + 2.0, 2.3, 3.2, 10), ink)
+	draw_circle(c + Vector2(7.6, 1.0), 0.9, fade(Color.WHITE, a))
+	draw_circle(c + Vector2(13.1, 1.0), 0.9, fade(Color.WHITE, a))
+	draw_line(c + Vector2(4.5, -2.5), c + Vector2(9.5, -1.0), ink, 2.0)
+	draw_line(c + Vector2(11.0, -1.0), c + Vector2(15.0, -2.8), ink, 2.0)
+	draw_line(c + Vector2(9.0, 8.5), c + Vector2(12.5, 8.0), ink, 1.5)
+
+
+func draw_blade(f: Fighter, hand: Vector2, ang: float, a: float, white: bool) -> void:
+	var d := dirv(ang)
+	var n := Vector2(-d.y, d.x)
+	var great := f.weapon == "great"
+	var w := 10.0 if great else 5.5
+	var ln := 46.0 if great else 50.0
+	var b0 := hand + d * 5.0
+	var steel := Color.WHITE if white else f.blade
+	outlined(PackedVector2Array([b0 + n * w / 2.0, b0 + d * (ln - 9.0) + n * w / 2.0, b0 + d * ln, b0 + d * (ln - 9.0) - n * w / 2.0, b0 - n * w / 2.0]), steel, a)
+	draw_line(b0 + d * 3.0 + n * w * 0.15, b0 + d * (ln - 10.0) + n * w * 0.15, fade(Color.WHITE, 0.65 * a), 1.5)
+	if great:
+		draw_line(b0 + d * 6.0 - n * w * 0.25, b0 + d * (ln - 10.0) - n * w * 0.25, fade(f.trim, 0.8 * a), 2.0)
+	var guard := Color.WHITE if white else f.trim
+	outlined(capsule(hand + d * 5.0 + n * (11.0 if great else 9.0), hand + d * 5.0 - n * (11.0 if great else 9.0), 2.8), guard, a, 2.0)
+	outlined(capsule(hand - d * 7.0, hand + d * 3.0, 2.6), Color.WHITE if white else Color("4a3428"), a, 2.0)
+	outlined(ellipse(hand.x - d.x * 8.0, hand.y - d.y * 8.0, 3.5, 3.5, 10), guard, a, 2.0)
 
 
 func crescent(c1: float, r1: float, a1: float, c2: float, r2: float, a2: float) -> PackedVector2Array:
@@ -1185,6 +1399,13 @@ func draw_particles() -> void:
 					var w2 := PackedVector2Array([Vector2(p.x, p.y + 4.0)])
 					quad_to(w2, Vector2(p.x + s * 24.0, p.y - 10.0 * a), Vector2(p.x + s * 34.0, p.y + 14.0))
 					draw_polyline(w2, fade(Color.WHITE, a), 3.0)
+			"star":
+				var r: float = p.size * (1.6 - a * 0.6)
+				var st := PackedVector2Array()
+				for i in 8:
+					var ang := PI / 4.0 * i + 0.3
+					st.append(Vector2(p.x, p.y) + Vector2(cos(ang), sin(ang)) * (r if i % 2 == 0 else r * 0.28))
+				fill(st, fade(Color.WHITE, a))
 			"puff":
 				draw_circle(Vector2(p.x, p.y), p.size * (1.5 - a * 0.5), fade(p.color, a))
 			_:
